@@ -1,0 +1,12 @@
+{
+  "name": "mcp-websocket-sample",
+  "version": "1.0.0",
+  "description": "Sample MCP server with WebSocket support for file operations",
+  "type": "module",
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install"
+  },
+  "keywords": ["mcp", "websocket", "file-operations"],
+  "author": "",
+  "license": "MIT"
+}

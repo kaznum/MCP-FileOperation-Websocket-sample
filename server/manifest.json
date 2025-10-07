@@ -1,0 +1,35 @@
+{
+  "name": "file-operations-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for file and directory operations",
+  "tools": [
+    {
+      "name": "list-files",
+      "description": "List files in a directory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "type": "string",
+            "description": "Directory path (relative path)"
+          }
+        },
+        "required": ["directory"]
+      }
+    },
+    {
+      "name": "read-file",
+      "description": "Read file contents",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filePath": {
+            "type": "string",
+            "description": "File path (relative path)"
+          }
+        },
+        "required": ["filePath"]
+      }
+    }
+  ]
+}

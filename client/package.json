@@ -1,0 +1,13 @@
+{
+  "name": "mcp-client",
+  "version": "1.0.0",
+  "description": "MCP WebSocket Client",
+  "type": "module",
+  "main": "client.js",
+  "scripts": {
+    "start": "node client.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
