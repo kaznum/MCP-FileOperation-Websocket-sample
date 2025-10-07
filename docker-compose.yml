@@ -1,11 +1,29 @@
 version: '3.8'
 
 services:
+  auth:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    container_name: mcp-auth
+    environment:
+      - PORT=8080
+      - CLIENT_ID=${OAUTH_CLIENT_ID:-mcp-client}
+      - CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-mcp-client-secret}
+      - ISSUER=http://auth:8080
+      - AUDIENCE=mcp-server
+      - ALLOWED_SCOPES=${OAUTH_ALLOWED_SCOPES:-file.read file.list}
+      - TOKEN_TTL=${OAUTH_TOKEN_TTL:-300}
+    networks:
+      - mcp-network
+
   mcp:
     build:
       context: ./server
       dockerfile: Dockerfile
     container_name: mcp
+    depends_on:
+      - auth
     ports:
       - "3000:3000"
     volumes:
@@ -14,7 +32,10 @@ services:
     environment:
       - TARGET_DIR=/data
       - PORT=3000
-      - API_KEY=${API_KEY:-your-secret-api-key-here}
+      - OAUTH_JWKS_URL=http://auth:8080/jwks.json
+      - OAUTH_ISSUER=http://auth:8080
+      - OAUTH_AUDIENCE=mcp-server
+      - OAUTH_REQUIRED_SCOPES=${OAUTH_REQUIRED_SCOPES:-file.read file.list}
     networks:
       - mcp-network
 
@@ -25,11 +46,15 @@ services:
     container_name: mcp-client
     depends_on:
       - mcp
+      - auth
     volumes:
       - ./client:/app
     environment:
       - SERVER_URL=ws://mcp:3000
-      - API_KEY=${API_KEY:-your-secret-api-key-here}
+      - OAUTH_TOKEN_URL=http://auth:8080/token
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-mcp-client}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-mcp-client-secret}
+      - OAUTH_SCOPE=${OAUTH_SCOPE:-file.read file.list}
     networks:
       - mcp-network
 

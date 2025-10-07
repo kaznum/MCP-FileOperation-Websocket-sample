@@ -2,13 +2,51 @@ import { WebSocketServer } from 'ws';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const TARGET_DIR = process.env.TARGET_DIR || '/data';
-const API_KEY = process.env.API_KEY;
+const OAUTH_ISSUER = process.env.OAUTH_ISSUER;
+const OAUTH_AUDIENCE = process.env.OAUTH_AUDIENCE || 'mcp-server';
+const OAUTH_JWKS_URL = process.env.OAUTH_JWKS_URL;
+const OAUTH_REQUIRED_SCOPES = (process.env.OAUTH_REQUIRED_SCOPES || '')
+  .split(/\s+/)
+  .filter(Boolean);
+
+if (!OAUTH_ISSUER || !OAUTH_JWKS_URL) {
+  throw new Error('OAuth 2.1 is required: set OAUTH_ISSUER and OAUTH_JWKS_URL environment variables.');
+}
+
+const jwks = createRemoteJWKSet(new URL(OAUTH_JWKS_URL));
+
+async function verifyAccessToken(token) {
+  if (!token) {
+    throw new Error('Missing bearer token');
+  }
+
+  const { payload } = await jwtVerify(token, jwks, {
+    issuer: OAUTH_ISSUER,
+    audience: OAUTH_AUDIENCE
+  });
+
+  if (OAUTH_REQUIRED_SCOPES.length > 0) {
+    const tokenScopes = new Set(
+      (Array.isArray(payload.scope) ? payload.scope.join(' ') : payload.scope || '')
+        .split(/\s+/)
+        .filter(Boolean)
+    );
+
+    const missingScopes = OAUTH_REQUIRED_SCOPES.filter(scope => !tokenScopes.has(scope));
+    if (missingScopes.length > 0) {
+      throw new Error(`Missing required scopes: ${missingScopes.join(', ')}`);
+    }
+  }
+
+  return payload;
+}
 
 // Load manifest
 const manifest = JSON.parse(
@@ -18,29 +56,35 @@ const manifest = JSON.parse(
 const wss = new WebSocketServer({
   port: PORT,
   verifyClient: (info, callback) => {
-    // Check for API key in headers or query parameters
-    const apiKey = info.req.headers['x-api-key'] ||
-                   new URL(info.req.url, `http://${info.req.headers.host}`).searchParams.get('api_key');
+    try {
+      const authHeader = info.req.headers['authorization'];
+      if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+        console.error('Authentication failed: Missing Bearer token');
+        callback(false, 401, 'Unauthorized: Bearer token required');
+        return;
+      }
 
-    if (!API_KEY) {
-      console.warn('WARNING: API_KEY not set - authentication disabled');
-      callback(true);
-      return;
-    }
-
-    if (apiKey === API_KEY) {
-      console.log('Client authenticated successfully');
-      callback(true);
-    } else {
-      console.error('Authentication failed: Invalid API key');
-      callback(false, 401, 'Unauthorized: Invalid API key');
+      const token = authHeader.substring(7).trim();
+      verifyAccessToken(token)
+        .then(payload => {
+          info.req.authContext = payload;
+          console.log(`Client authenticated: subject=${payload.sub ?? 'unknown'}`);
+          callback(true);
+        })
+        .catch(error => {
+          console.error(`Authentication failed: ${error.message}`);
+          callback(false, 401, 'Unauthorized: Invalid or expired token');
+        });
+    } catch (error) {
+      console.error('Authentication failure:', error);
+      callback(false, 500, 'Internal Server Error');
     }
   }
 });
 
 console.log(`MCP Server listening on port ${PORT}`);
 console.log(`Target directory: ${TARGET_DIR}`);
-console.log(`Authentication: ${API_KEY ? 'enabled' : 'DISABLED (WARNING)'}`);
+console.log(`Authentication: OAuth 2.1 (issuer: ${OAUTH_ISSUER}, audience: ${OAUTH_AUDIENCE})`);
 
 // Helper function to resolve paths safely
 function resolvePath(relativePath) {
@@ -94,8 +138,9 @@ async function readFile(filePath) {
 }
 
 // Handle WebSocket connections
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   console.log('Client connected');
+  ws.authContext = req?.authContext;
 
   ws.on('message', async (data) => {
     try {
