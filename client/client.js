@@ -1,10 +1,17 @@
 import WebSocket from 'ws';
 
 const SERVER_URL = process.env.SERVER_URL || 'ws://localhost:3000';
+const API_KEY = process.env.API_KEY;
 
 console.log(`Connecting to MCP server at ${SERVER_URL}...`);
+console.log(`Authentication: ${API_KEY ? 'enabled' : 'disabled'}`);
 
-const ws = new WebSocket(SERVER_URL);
+// Create WebSocket with API key in headers
+const ws = new WebSocket(SERVER_URL, {
+  headers: {
+    'X-API-Key': API_KEY || ''
+  }
+});
 
 let messageId = 0;
 

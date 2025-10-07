@@ -8,16 +8,39 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const TARGET_DIR = process.env.TARGET_DIR || '/data';
+const API_KEY = process.env.API_KEY;
 
 // Load manifest
 const manifest = JSON.parse(
   await fs.readFile(path.join(__dirname, 'manifest.json'), 'utf-8')
 );
 
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({
+  port: PORT,
+  verifyClient: (info, callback) => {
+    // Check for API key in headers or query parameters
+    const apiKey = info.req.headers['x-api-key'] ||
+                   new URL(info.req.url, `http://${info.req.headers.host}`).searchParams.get('api_key');
+
+    if (!API_KEY) {
+      console.warn('WARNING: API_KEY not set - authentication disabled');
+      callback(true);
+      return;
+    }
+
+    if (apiKey === API_KEY) {
+      console.log('Client authenticated successfully');
+      callback(true);
+    } else {
+      console.error('Authentication failed: Invalid API key');
+      callback(false, 401, 'Unauthorized: Invalid API key');
+    }
+  }
+});
 
 console.log(`MCP Server listening on port ${PORT}`);
 console.log(`Target directory: ${TARGET_DIR}`);
+console.log(`Authentication: ${API_KEY ? 'enabled' : 'DISABLED (WARNING)'}`);
 
 // Helper function to resolve paths safely
 function resolvePath(relativePath) {
