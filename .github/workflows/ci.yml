@@ -16,11 +16,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+
       - name: Run tests via Codex
         id: run_codex
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: danger-full-access
           prompt: |
             You are operating inside a GitHub Actions CI job with Docker Compose available and the repository checked out at the workspace root.
 
