@@ -33,6 +33,10 @@ jobs:
             You are operating inside a GitHub Actions CI job with Docker Compose available and the repository checked out at the workspace root.
 
             Objective:
+            0. Enable `set -euo pipefail` and define a helper function `run_step` that:
+               - prints a banner such as `=== Running: <command> ===`.
+               - executes the provided command while streaming stdout/stderr via `tee` to a temp log file.
+               - when the command fails, captures the exit code and the last 100 lines of the temp log for reporting, then short-circuits the remaining steps.
             1. Set `DOCKER_CONFIG=/tmp/docker-config` and ensure `"$DOCKER_CONFIG/buildx"` exists so Docker can create build state.
             2. Build the Docker images needed for the test runs: `docker compose build`.
             3. Execute the auth service tests by running `docker compose run --rm auth npm test`.
@@ -42,7 +46,7 @@ jobs:
             7. When both test commands succeed, produce a concise success summary that mentions each command.
             Reporting:
             - Begin the final message with `RESULT: SUCCESS` if all commands succeed.
-            - Begin the final message with `RESULT: FAILURE` followed by the failing command details if any command fails.
+            - Begin the final message with `RESULT: FAILURE` followed by the failing command, its exit code, and the captured log output (trimmed to the last 100 lines) if any command fails.
 
             Constraints:
             - Execute commands using shell syntax in the repository root.
