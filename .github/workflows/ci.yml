@@ -26,12 +26,13 @@ jobs:
 
             Objective:
             1. Set `DOCKER_CONFIG=/tmp/docker-config` and ensure `"$DOCKER_CONFIG/buildx"` exists so Docker can create build state.
-            2. Build the Docker images needed for the test runs: `docker compose build`.
-            3. Execute the auth service tests by running `docker compose run --rm auth npm test`.
-            4. Execute the server service tests by running `docker compose run --rm mcp sh -c "npm install && npm test"`.
-            5. After tests finish (regardless of outcome) call `docker compose down --remove-orphans` to clean up containers.
-            6. If any command returns a non-zero exit code, stop immediately and report the failure details.
-            7. When both test commands succeed, produce a concise success summary that mentions each command.
+            2. Ensure the current user can talk to Docker by running `sudo usermod -aG docker "$USER"` and then reloading membership via `newgrp docker`.
+            3. Build the Docker images needed for the test runs: `docker compose build`.
+            4. Execute the auth service tests by running `docker compose run --rm auth npm test`.
+            5. Execute the server service tests by running `docker compose run --rm mcp sh -c "npm install && npm test"`.
+            6. After tests finish (regardless of outcome) call `docker compose down --remove-orphans` to clean up containers.
+            7. If any command returns a non-zero exit code, stop immediately and report the failure details.
+            8. When both test commands succeed, produce a concise success summary that mentions each command.
 
             Constraints:
             - Execute commands using shell syntax in the repository root.
