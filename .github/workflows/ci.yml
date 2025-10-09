@@ -162,7 +162,7 @@ jobs:
               '```\n' + logSnippet + '\n```'
             ].join('\n');
 
-            await github.rest.pulls.createReviewComment({
+            const params = {
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number,
@@ -171,7 +171,19 @@ jobs:
               path,
               side: 'RIGHT',
               line,
-            });
+            };
+
+            try {
+              await github.rest.pulls.createReviewComment(params);
+            } catch (error) {
+              core.warning(`Falling back to PR comment: ${error.message}`);
+              await github.rest.issues.createComment({
+                owner: params.owner,
+                repo: params.repo,
+                issue_number: params.pull_number,
+                body,
+              });
+            }
 
       - name: Fail job on Codex failure
         if: ${{ steps.analyze.outputs.status == 'failure' }}
