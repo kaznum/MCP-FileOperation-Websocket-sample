@@ -12,27 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      NODE_VERSION: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            server/package-lock.json
-
-      - name: Install server dependencies
-        working-directory: server
-        run: npm ci
-
-      - name: Install auth dependencies
-        working-directory: auth
-        run: npm install
 
       - name: Run tests via Codex
         id: run_codex
@@ -40,17 +22,19 @@ jobs:
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt: |
-            You are operating inside a GitHub Actions CI job. Dependencies for each package have already been installed.
+            You are operating inside a GitHub Actions CI job with Docker Compose available and the repository checked out at the workspace root.
 
             Objective:
-            1. Run `npm test` inside the `server` directory.
-            2. Run `npm test` inside the `auth` directory.
-            3. If either command fails or exits non-zero, stop immediately and return a clear failure message.
-            4. When both commands succeed, produce a concise summary indicating success.
+            1. Build the Docker images needed for the test runs: `docker compose build`.
+            2. Execute the auth service tests by running `docker compose run --rm auth npm test`.
+            3. Execute the server service tests by running `docker compose run --rm mcp sh -c "npm install && npm test"`.
+            4. After tests finish (regardless of outcome) call `docker compose down --remove-orphans` to clean up containers.
+            5. If any command returns a non-zero exit code, stop immediately and report the failure details.
+            6. When both test commands succeed, produce a concise success summary that mentions each command.
 
             Constraints:
-            - Execute commands using shell syntax.
-            - Treat any non-zero exit code as a failure of this CI job.
-            - Do not attempt to reinstall dependencies or modify unrelated files.
+            - Execute commands using shell syntax in the repository root.
+            - Treat any non-zero exit status as a failure of this CI job.
+            - Do not modify repository files or perform additional installs beyond the commands listed.
 
             Provide the results in the final message.
