@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -31,16 +33,47 @@ jobs:
             You are operating inside a GitHub Actions CI job with Docker Compose available and the repository checked out at the workspace root.
 
             Objective:
+            0. Begin with `set -euo pipefail` and define a helper function `run_step()` exactly as follows (substitute nothing):
+               ```
+               run_step() {
+                 local label="$1"
+                 shift
+                 local log
+                 log="$(mktemp)"
+                 echo "=== Running: ${label} ==="
+                 if "$@" 2>&1 | tee "$log"; then
+                   echo "=== Finished: ${label} ==="
+                 else
+                   local status="${PIPESTATUS[0]}"
+                   echo "=== Failed: ${label} (exit ${status}) ==="
+                   failure_command="${label}"
+                   failure_status="${status}"
+                   failure_log="$(tail -n 100 "$log")"
+                   rm -f "$log"
+                   return "${status}"
+                 fi
+                 rm -f "$log"
+               }
+               failure_command=""
+               failure_status=""
+               failure_log=""
+               ```
             1. Set `DOCKER_CONFIG=/tmp/docker-config` and ensure `"$DOCKER_CONFIG/buildx"` exists so Docker can create build state.
-            2. Build the Docker images needed for the test runs: `docker compose build`.
-            3. Execute the auth service tests by running `docker compose run --rm auth npm test`.
-            4. Execute the server service tests by running `docker compose run --rm mcp sh -c "npm install && npm test"`.
-            5. After tests finish (regardless of outcome) call `docker compose down --remove-orphans` to clean up containers.
-            6. If any command returns a non-zero exit code, stop immediately and report the failure details.
-            7. When both test commands succeed, produce a concise success summary that mentions each command.
+            2. Run all commands through `run_step`, in order:
+               - `run_step "docker compose build" docker compose build`
+               - `run_step "auth tests" docker compose run --rm auth npm test`
+               - `run_step "server tests" docker compose run --rm mcp sh -c "npm install && npm test"`
+            3. Always call `docker compose down --remove-orphans` at the end (outside of `run_step`, guarded with `trap "docker compose down --remove-orphans" EXIT`).
+            4. If any `run_step` captures failure information (i.e., `failure_command` is non-empty), stop running further commands and use that information for reporting.
+            5. When both test commands succeed, produce a concise success summary that mentions each command.
             Reporting:
             - Begin the final message with `RESULT: SUCCESS` if all commands succeed.
-            - Begin the final message with `RESULT: FAILURE` followed by the failing command details if any command fails.
+            - Begin the final message with `RESULT: FAILURE` followed by the failing command label, its exit code, and the captured log output (trimmed to the last 100 lines) if any command fails. Format the log section as:
+              ```
+              RESULT: FAILURE <label> (exit <code>)
+              ---
+              <last 100 lines>
+              ```
 
             Constraints:
             - Execute commands using shell syntax in the repository root.
@@ -49,20 +82,111 @@ jobs:
 
             Provide the results in the final message.
 
-      - name: Verify Codex result
+      - name: Analyze Codex result
+        id: analyze
         if: always()
         run: |
-          final="${{ steps.run_codex.outputs.final-message }}"
-          echo "$final"
+          final=$(cat <<'EOF'
+          ${{ steps.run_codex.outputs['final-message'] }}
+          EOF
+          )
           if [[ -z "$final" ]]; then
             echo "Codex did not return a final message" >&2
             exit 1
           fi
+          echo "$final"
           if [[ "$final" == RESULT:\ FAILURE* ]]; then
-            echo "Codex reported failure" >&2
-            exit 1
+            {
+              echo "status=failure"
+              echo "message<<MESSAGE"
+              printf '%s\n' "$final"
+              echo "MESSAGE"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          if [[ "$final" != RESULT:\ SUCCESS* ]]; then
-            echo "Unexpected Codex result format" >&2
-            exit 1
+          if [[ "$final" == RESULT:\ SUCCESS* ]]; then
+            {
+              echo "status=success"
+              echo "message<<MESSAGE"
+              printf '%s\n' "$final"
+              echo "MESSAGE"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "Unexpected Codex result format: $final" >&2
+          exit 1
+
+      - name: Leave review comments on failure
+        if: ${{ github.event_name == 'pull_request' && steps.analyze.outputs.status == 'failure' }}
+        uses: actions/github-script@v7
+        env:
+          FAILURE_MESSAGE: ${{ steps.analyze.outputs.message }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const failureMessage = process.env.FAILURE_MESSAGE;
+            const matchCommand = failureMessage.match(/^RESULT: FAILURE ([^(]+) \(exit (\d+)\)/m);
+            if (!matchCommand) {
+              throw new Error("Unable to parse failure command from Codex output");
+            }
+            const commandLabel = matchCommand[1].trim();
+            const exitCode = matchCommand[2];
+
+            const matchLog = failureMessage.match(/^-{3}\n([\s\S]*)$/m);
+            const logSnippet = matchLog ? matchLog[1].trim() : failureMessage;
+
+            let path = '';
+            let line = 1;
+
+            if (/auth tests/i.test(commandLabel)) {
+              path = 'auth/tests/auth.test.js';
+              const testLine = failureMessage.match(/auth\.test\.js:(\d+)/);
+              if (testLine) {
+                line = Number(testLine[1]);
+              }
+            } else if (/server tests/i.test(commandLabel)) {
+              path = 'server/tests/server.test.js';
+              const testLine = failureMessage.match(/server\.test\.js:(\d+)/);
+              if (testLine) {
+                line = Number(testLine[1]);
+              }
+            } else {
+              path = 'docker-compose.yml';
+            }
+
+            const body = [
+              '❌ Codex CI detected a failing test run.',
+              '',
+              `**Command:** \`${commandLabel}\` (exit ${exitCode})`,
+              '',
+              '```\n' + logSnippet + '\n```'
+            ].join('\n');
+
+            const params = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              body,
+              commit_id: context.payload.pull_request.head.sha,
+              path,
+              side: 'RIGHT',
+              line,
+            };
+
+            try {
+              await github.rest.pulls.createReviewComment(params);
+            } catch (error) {
+              core.warning(`Falling back to PR comment: ${error.message}`);
+              await github.rest.issues.createComment({
+                owner: params.owner,
+                repo: params.repo,
+                issue_number: params.pull_number,
+                body,
+              });
+            }
+
+      - name: Fail job on Codex failure
+        if: ${{ steps.analyze.outputs.status == 'failure' }}
+        run: |
+          echo "Codex reported failure" >&2
+          exit 1
