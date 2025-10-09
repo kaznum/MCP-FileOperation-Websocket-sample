@@ -38,6 +38,9 @@ jobs:
             5. After tests finish (regardless of outcome) call `docker compose down --remove-orphans` to clean up containers.
             6. If any command returns a non-zero exit code, stop immediately and report the failure details.
             7. When both test commands succeed, produce a concise success summary that mentions each command.
+            Reporting:
+            - Begin the final message with `RESULT: SUCCESS` if all commands succeed.
+            - Begin the final message with `RESULT: FAILURE` followed by the failing command details if any command fails.
 
             Constraints:
             - Execute commands using shell syntax in the repository root.
@@ -45,3 +48,21 @@ jobs:
             - Do not modify repository files or perform additional installs beyond the commands listed.
 
             Provide the results in the final message.
+
+      - name: Verify Codex result
+        if: always()
+        run: |
+          final="${{ steps.run_codex.outputs.final-message }}"
+          echo "$final"
+          if [[ -z "$final" ]]; then
+            echo "Codex did not return a final message" >&2
+            exit 1
+          fi
+          if [[ "$final" == RESULT:\ FAILURE* ]]; then
+            echo "Codex reported failure" >&2
+            exit 1
+          fi
+          if [[ "$final" != RESULT:\ SUCCESS* ]]; then
+            echo "Unexpected Codex result format" >&2
+            exit 1
+          fi
