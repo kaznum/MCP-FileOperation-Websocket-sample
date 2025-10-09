@@ -58,21 +58,22 @@ jobs:
             echo "Codex did not return a final message" >&2
             exit 1
           fi
+          echo "$final"
           if [[ "$final" == RESULT:\ FAILURE* ]]; then
             {
               echo "status=failure"
-              echo "message<<'EOF'"
-              echo "$final"
-              echo "EOF"
+              echo "message<<MESSAGE"
+              printf '%s\n' "$final"
+              echo "MESSAGE"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [[ "$final" == RESULT:\ SUCCESS* ]]; then
             {
               echo "status=success"
-              echo "message<<'EOF'"
-              echo "$final"
-              echo "EOF"
+              echo "message<<MESSAGE"
+              printf '%s\n' "$final"
+              echo "MESSAGE"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
