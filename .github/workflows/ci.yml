@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - feature/**
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+
+      - name: Run tests via Codex
+        id: run_codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: danger-full-access
+          prompt: |
+            You are operating inside a GitHub Actions CI job with Docker Compose available and the repository checked out at the workspace root.
+
+            Objective:
+            1. Set `DOCKER_CONFIG=/tmp/docker-config` and ensure `"$DOCKER_CONFIG/buildx"` exists so Docker can create build state.
+            2. Build the Docker images needed for the test runs: `docker compose build`.
+            3. Execute the auth service tests by running `docker compose run --rm auth npm test`.
+            4. Execute the server service tests by running `docker compose run --rm mcp sh -c "npm install && npm test"`.
+            5. After tests finish (regardless of outcome) call `docker compose down --remove-orphans` to clean up containers.
+            6. If any command returns a non-zero exit code, stop immediately and report the failure details.
+            7. When both test commands succeed, produce a concise success summary that mentions each command.
+            Reporting:
+            - Begin the final message with `RESULT: SUCCESS` if all commands succeed.
+            - Begin the final message with `RESULT: FAILURE` followed by the failing command details if any command fails.
+
+            Constraints:
+            - Execute commands using shell syntax in the repository root.
+            - Treat any non-zero exit status as a failure of this CI job.
+            - Do not modify repository files or perform additional installs beyond the commands listed.
+
+            Provide the results in the final message.
+
+      - name: Verify Codex result
+        if: always()
+        run: |
+          final="${{ steps.run_codex.outputs.final-message }}"
+          echo "$final"
+          if [[ -z "$final" ]]; then
+            echo "Codex did not return a final message" >&2
+            exit 1
+          fi
+          if [[ "$final" == RESULT:\ FAILURE* ]]; then
+            echo "Codex reported failure" >&2
+            exit 1
+          fi
+          if [[ "$final" != RESULT:\ SUCCESS* ]]; then
+            echo "Unexpected Codex result format" >&2
+            exit 1
+          fi
