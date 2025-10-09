@@ -119,6 +119,33 @@ docker compose run --rm --no-deps mcp-client
 - package.jsonを変更した場合は、コンテナを再起動すると自動的に`npm install`が実行されます
 - 依存関係のローカルインストールは不要です（コンテナ内で自動実行）
 
+## テスト
+
+- 単体テストはDockerコンテナ内で実行します。Node 20/24環境を前提にしているため、ローカルNodeが古い場合はコンテナ経由の実行を推奨します。
+
+```bash
+# 認可サーバーのテスト
+docker compose run --rm auth npm test
+
+# MCPサーバーのテスト（初回は依存関係をインストール）
+docker compose run --rm mcp sh -c "npm install && npm test"
+```
+
+- `server/tests/server.test.js` はJWT検証のためにオンザフライでJWKSサーバーを生成し、`auth`サービスに依存しません。
+- `auth/tests/auth.test.js` はトークン発行やスコープ検証を網羅し、HTTPレスポンスコードを厳密に確認します。
+
+## CI/CD
+
+- `.github/workflows/ci.yml` でGitHub Actionsを構成しています。
+  - `docker/setup-buildx-action@v3` でBuildKitを準備し、Codex実行前にDocker環境を整備します。
+  - `openai/codex-action@v1` を利用し、CodexにDocker Compose経由で以下の処理を指示しています:
+    1. `docker compose build`
+    2. `docker compose run --rm auth npm test`
+    3. `docker compose run --rm mcp sh -c "npm install && npm test"`
+    4. `docker compose down --remove-orphans`
+  - テストに失敗した場合、Codexの最終メッセージを解析してPRに失敗内容をコメントします。差分に紐付けられない場合はPR全体へのコメントにフォールバックします。
+  - Codexの結果が`RESULT: FAILURE`で始まるとジョブが失敗扱いとなり、GitHub上で分かりやすく可視化されます。
+
 ## MCPツール
 
 ### list-files

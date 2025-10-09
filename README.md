@@ -76,6 +76,23 @@ docker compose run --rm --no-deps mcp-client
 docker compose down
 ```
 
+## テスト
+
+自動テストはDocker Compose経由で実行します。CIでも同じコマンドが使用されます。
+
+```bash
+# 認可サーバーのテスト
+docker compose run --rm auth npm test
+
+# MCPサーバーのテスト（初回実行時は依存関係をインストール）
+docker compose run --rm mcp sh -c "npm install && npm test"
+```
+
+- `auth/tests/auth.test.js`: `/token`エンドポイントの認証・スコープ検証・JWT署名をカバー
+- `server/tests/server.test.js`: WebSocket経由のOAuth 2.1検証とファイル操作ツールのレスポンスを確認
+
+テスト失敗時は詳細なログが出力されるため、末尾100行を参考に原因を特定してください。
+
 ## アーキテクチャ
 
 ```
@@ -296,6 +313,13 @@ docker compose ps
 docker compose down
 docker compose build --no-cache
 ```
+
+## CI
+
+- GitHub Actionsのワークフローファイルは `.github/workflows/ci.yml` にあります。
+- `docker/setup-buildx-action@v3` と `openai/codex-action@v1` を用いて、CodexがDocker Composeでビルド・テスト・クリーンアップを実行します。
+- Codexの実行結果は `RESULT: SUCCESS` / `RESULT: FAILURE` 形式で解析され、失敗時はPRに詳細なログコメント（可能な限り該当行へのレビューコメント）が追加されます。
+- 失敗時はジョブがエラー終了となり、GitHub上でステータスが明確に表示されます。
 
 ## ライセンス
 
