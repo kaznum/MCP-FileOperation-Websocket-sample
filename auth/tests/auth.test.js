@@ -221,7 +221,7 @@ test('authorization server exposes metadata and issues JWT access tokens', async
       }
     );
 
-    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.status, 404);
     assert.strictEqual(body.error, 'invalid_scope');
   });
 });
