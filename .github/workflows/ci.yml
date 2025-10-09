@@ -87,9 +87,9 @@ jobs:
         if: always()
         run: |
           final=$(cat <<'EOF'
-${{ steps.run_codex.outputs['final-message'] }}
-EOF
-)
+          ${{ steps.run_codex.outputs['final-message'] }}
+          EOF
+          )
           if [[ -z "$final" ]]; then
             echo "Codex did not return a final message" >&2
             exit 1
